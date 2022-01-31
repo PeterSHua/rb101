@@ -1,0 +1,8 @@
+welcome: "Welcome to mortgage calculator."
+prompt_amount: "Please enter the loan amount."
+apr_amount: "Please enter the percent APR amount."
+duration_amount: "Please enter the duration in years."
+invalid_input: "Please enter a number greater than 0"
+goodbye: "Thank you for using mortage calculator. Goodbye!"
+result: "Your monthly payment is:" 
+exit: "Do you want to repeat the calculation? (Enter Y)"
