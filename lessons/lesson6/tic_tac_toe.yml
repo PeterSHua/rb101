@@ -1,13 +1,18 @@
 welcome: "Welcome to Tic Tac Toe!"
-player_turn: "It's your turn. Choose a square."
-computer_turn: "It's the computer's turn."
-player_choice1: "ul = upper left, uc = upper center, ur = upper right"
-player_choice2: "ml = middle left, mc = middle center, mr = middle right"
-player_choice3: "bl = bottom left, bc = bottom center, br = bottom right"
+grid_size: "Enter size of the grid (1 < grid size < 100000):"
+human_turn: "It's your turn. Choose a square."
+ai_turn: "It's the AI's turn."
+human_row: "Enter a row:"
+human_column: "Enter a column:"
 invalid_choice: "Enter a valid choice."
 piece_choice: "Choose a piece: X, O, or R for a random piece. X moves first."
 square_occupied: "Pick a different square, that one's occupied."
 tie: "Game is tied."
-player_win: 'You won.'
-computer_win: 'Computer won.'
+human_win_match: 'You won the match.'
+ai_win_match: 'AI won the match.'
 again: "Do you want to play again? y/n"
+human_score: "Your score:"
+ai_score: "AI score:"
+human_win_game: 'You won the game.'
+ai_win_game: 'AI won the game.'
+next_match: 'Enter anything to play the next match.'
