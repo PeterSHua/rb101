@@ -1,27 +1,20 @@
 =begin
-Example 3 x 3 board with 1d coordinates
-     |     |
-  0  |  1  |  2
-_____|_____|_____
-     |     |
-  3  |  4  |  5
-_____|_____|_____
-     |     |
-  6  |  7  |  8
-     |     |
+Tic Tac Toe game with variable grid size and multiple human/AI plyrs.
 
-top board row
-  - blank row with vertical dividers
-  - piece row with vertical dividers
-  - blank row with vertical and horizontal dividers
-middle board row(s)
-  - blank row with vertical dividers
-  - piece row with vertical dividers
-  - blank row with vertical and horizontal dividers
-bottom board row
-  - blank row with vertical dividers
-  - piece row with vertical dividers
-  - blank row with vertical dividers
+For example:
+  3 x 3 board with (row, col) 2d coordinates and 1d coordinates.
+  (0,0)|(0,1)|(0,2)
+    0  |  1  |  2
+  _____|_____|_____
+  (1,0)|(1,1)|(1,2)
+    3  |  4  |  5
+  _____|_____|_____
+  (2,0)|(2,1)|(2,2)
+    6  |  7  |  8
+       |     |
+
+TODO: align scores
+TODO: colour symbols
 =end
 
 require 'yaml'
@@ -30,111 +23,261 @@ require 'pry-byebug'
 MESSAGES = YAML.load_file('tic_tac_toe.yml')
 SCREEN_LENGTH = 80
 WIN_CONDITION = 5
-PIECES_CHOICE = %w(X O R)
-PIECE_WIDTH = 1
-SQUARE_WIDTH = 5
+MIN_GRID_WIDTH = 2
+MIN_PLAYERS = 2
+PIECES_CHOICE = %w(X O ~ ! @ # $ % ^ & * - + = : ?)
+SQ_WIDTH = 5
 PAD_CHAR = ' '
 GRID_VERT_CHAR = '|'
 GRID_HORZ_CHAR = '_'
-
-def request_grid_size
-  prompt(MESSAGES['grid_size'])
-  loop do
-    input = gets.chomp
-    return input.to_i if input == input.to_i.to_s && input.to_i > 1
-    prompt(MESSAGES['invalid_choice'])
-  end
-end
-
-def init_scores
-  {
-    human: 0,
-    ai: 0
-  }
-end
-
-def init_pieces
-  {
-    human: '',
-    ai: ''
-  }
-end
 
 def clean_screen
   system 'clear'
 end
 
-def init_board(grid_size)
-  [' '] * (grid_size**2)
+# Returns a user input restricted to an integer between low and high limits
+# (inclusive).
+def req_num_and_scrub_inc_limits(msg, low, high)
+  prompt(msg)
+  num = 0
+
+  loop do
+    input = gets.chomp
+    num = input.to_i
+
+    break if input == num.to_s && num.to_i >= low && num.to_i <= high
+    prompt(MESSAGES['invalid_choice'])
+  end
+
+  num
 end
 
-def clear_board!(board)
-  board.map! { ' ' }
+def req_grid_size
+  msg = "#{MESSAGES['enter_grid_size']} "\
+        "(#{MIN_GRID_WIDTH} <= "\
+        "#{MESSAGES['grid_size']} <= "\
+        "#{PIECES_CHOICE.length})"
+
+  req_num_and_scrub_inc_limits(msg, MIN_GRID_WIDTH, PIECES_CHOICE.length)
 end
 
-def calculate_front_pad(center_str)
-  front_pad_length = (SQUARE_WIDTH - center_str.length) / 2
+# Returns the number of human or AI players from the user.
+def req_plyr_count(min_plyrs, max_plyrs, human = true)
+  human_or_ai = human ? MESSAGES['human'] : MESSAGES['ai']
+
+  msg = "#{MESSAGES['enter_num_plyrs']} "\
+        "#{human_or_ai} "\
+        "#{MESSAGES['plyrs']} "\
+        "(#{min_plyrs} <= #{MESSAGES['plyrs']} <= #{max_plyrs})"
+
+  req_num_and_scrub_inc_limits(msg, min_plyrs, max_plyrs)
+end
+
+# Returns the number of AI players from the user.
+# Note that the sum of human and AI players must be >= 2 and <= grid size.
+# We don't ask for the number of AI players if there can be no more AI plyrs.
+# We don't ask for the number of AI players if there's only one possible
+# option.
+# For example:
+#   In a 3 x 3 grid, the max number of players is 3.
+#   Therefore, there must be 0 AI if there are 3 humans.
+# For example:
+#   In a 2 x 2 grid, the max number of players is 2
+#   Therefore, there must be 1 AI if there is 1 human.
+#   Therefore, there must be 2 AI if there are 0 humans.
+def req_ai_count(grid_size, human_count)
+  min_ai_count = human_count <= MIN_PLAYERS ? MIN_PLAYERS - human_count : 0
+  max_ai_count = grid_size - human_count
+
+  if max_ai_count <= 0 then 0
+  elsif min_ai_count == max_ai_count then min_ai_count
+  else req_plyr_count(min_ai_count, max_ai_count, false)
+  end
+end
+
+def init_plyr(num, pc, human = 'true')
+  {
+    num: num,
+    score: 0,
+    pc: pc,
+    human?: human
+  }
+end
+
+def init_brd(grid_size)
+  {
+    grid: [' '] * (grid_size**2),
+    grid_size: grid_size
+  }
+end
+
+# Returns a hash that keeps keeps track of each pieces' count in each
+# row, column and diagonal.
+# For example:
+#   rows: Contains an array of size equal to grid.
+#   Each row in rows: contains a hash where keys are pieces, and values are
+#   the count of pieces in the respective row.
+# Note that diag1 is the top-left to bottom-right diagonal.
+# Note that diag2 is the top-right to bottom-left diagonal.
+def init_brd_state(grid_size)
+  {
+    rows: Array.new(grid_size) { Hash.new(0) },
+    cols: Array.new(grid_size) { Hash.new(0) },
+    diag1: Hash.new(0),
+    diag2: Hash.new(0)
+  }
+end
+
+# rubocop: disable Metrics/AbcSize
+def update_brd_state!(brd, brd_state, coord_1d, curr_plyr)
+  col, row = to_2d(brd, coord_1d)
+
+  brd_state[:rows][row][curr_plyr[:pc].to_sym] += 1
+  brd_state[:cols][col][curr_plyr[:pc].to_sym] += 1
+
+  # Updates piece counts in diagonals only if the given square is in a
+  # diagonal.
+  # Note that the square in the center of the grid counts for both diagonals.
+  if row == col
+    brd_state[:diag1][curr_plyr[:pc].to_sym] += 1
+  end
+
+  if row == brd[:grid_size] - 1 - col
+    brd_state[:diag2][curr_plyr[:pc].to_sym] += 1
+  end
+end
+# rubocop: enable Metrics/AbcSize
+
+def clear_brd!(brd)
+  brd[:grid].map! { ' ' }
+end
+
+=begin
+Returns the padding to the right of a piece marked by Zs below.
+       |     |
+       |     |
+  _____|_____|_____
+       |     |
+       |     |
+  _____|_____|_____
+       |     |
+  ZZ   |     |
+       |     |
+=end
+def calc_front_pad(center_str)
+  front_pad_length = (SQ_WIDTH - center_str.length) / 2
   PAD_CHAR * front_pad_length
 end
 
-def calculate_back_pad(front_pad, center_str)
-  back_pad_length = SQUARE_WIDTH - front_pad.length - center_str.length
+=begin
+Returns the padding to the left of a piece marked by Zs below.
+       |     |
+       |     |
+  _____|_____|_____
+       |     |
+       |     |
+  _____|_____|_____
+       |     |
+     ZZ|     |
+       |     |
+=end
+def calc_back_pad(front_pad, center_str)
+  back_pad_length = SQ_WIDTH - front_pad.length - center_str.length
   PAD_CHAR * back_pad_length
 end
 
-def draw_blank_vert(grid_size)
-  puts (PAD_CHAR * SQUARE_WIDTH + GRID_VERT_CHAR) * (grid_size - 1)
+=begin
+Prints the part of a square marked below by Zs.
+  ZZZZZZ     |
+       |     |
+  _____|_____|_____
+       |     |
+       |     |
+  _____|_____|_____
+       |     |
+       |     |
+       |     |
+=end
+def draw_blank_sq_vert_div(brd)
+  puts (PAD_CHAR * SQ_WIDTH + GRID_VERT_CHAR) * (brd[:grid_size] - 1)
 end
 
-def draw_piece_vert(grid_size, board, row)
-  front_pad = calculate_front_pad(PIECES_CHOICE[0])
-  back_pad = calculate_back_pad(front_pad, PIECES_CHOICE[0])
+=begin
+Prints the part of a square marked below by Zs.
+       |     |
+  ZZZZZZ     |
+  _____|_____|_____
+       |     |
+       |     |
+  _____|_____|_____
+       |     |
+       |     |
+       |     |
+=end
+# rubocop: disable Metrics/AbcSize
+def draw_pc_sq_vert_div(brd, row)
+  front_pad = calc_front_pad(PIECES_CHOICE[0])
+  back_pad = calc_back_pad(front_pad, PIECES_CHOICE[0])
 
-  (grid_size - 1).times do |idx|
+  (brd[:grid_size] - 1).times do |idx|
     print "#{front_pad}"\
-          "#{board[row * grid_size + idx]}"\
+          "#{brd[:grid][row * brd[:grid_size] + idx]}"\
           "#{back_pad}|"
   end
 
   puts "#{front_pad}"\
-       "#{board[row * grid_size + (grid_size - 1)]}"\
+       "#{brd[:grid][row * brd[:grid_size] + (brd[:grid_size] - 1)]}"\
        "#{back_pad}#{row}"
 end
+# rubocop: enable Metrics/AbcSize
 
-def draw_blank_horz_vert(grid_size)
-  square = GRID_HORZ_CHAR * SQUARE_WIDTH + GRID_VERT_CHAR
-  last_square = GRID_HORZ_CHAR * SQUARE_WIDTH
-  puts "#{square * (grid_size - 1)}#{last_square}"
+=begin
+Prints the part of a square marked below by Zs.
+       |     |
+       |     |
+  ZZZZZZ_____|_____
+       |     |
+       |     |
+  _____|_____|_____
+       |     |
+       |     |
+       |     |
+=end
+def draw_blank_sq_horz_vert_div(brd)
+  sq = GRID_HORZ_CHAR * SQ_WIDTH + GRID_VERT_CHAR
+  last_sq = GRID_HORZ_CHAR * SQ_WIDTH
+  puts "#{sq * (brd[:grid_size] - 1)}#{last_sq}"
 end
 
-def draw_y_coords(grid_size)
-  (grid_size).times do |idx|
-    front_pad = calculate_front_pad(idx.to_s)
-    back_pad = calculate_back_pad(front_pad, idx.to_s)
+# Prints the column numbers.
+def draw_col_coords(brd)
+  (brd[:grid_size]).times do |idx|
+    front_pad = calc_front_pad(idx.to_s)
+    back_pad = calc_back_pad(front_pad, idx.to_s)
     print "#{front_pad}#{idx}#{back_pad} "
   end
 
   puts
 end
 
-def draw_top_row(grid_size, board)
-  draw_blank_vert(grid_size)
-  draw_piece_vert(grid_size, board, 0)
-  draw_blank_horz_vert(grid_size)
+def draw_top_row(brd)
+  draw_blank_sq_vert_div(brd)
+  draw_pc_sq_vert_div(brd, 0)
+  draw_blank_sq_horz_vert_div(brd)
 end
 
-def draw_middle_rows(grid_size, board)
-  (1...(grid_size - 1)).each do |row|
-    draw_blank_vert(grid_size)
-    draw_piece_vert(grid_size, board, row)
-    draw_blank_horz_vert(grid_size)
+def draw_middle_rows(brd)
+  (1...(brd[:grid_size] - 1)).each do |row|
+    draw_blank_sq_vert_div(brd)
+    draw_pc_sq_vert_div(brd, row)
+    draw_blank_sq_horz_vert_div(brd)
   end
 end
 
-def draw_bottom_row(grid_size, board)
-  draw_blank_vert(grid_size)
-  draw_piece_vert(grid_size, board, grid_size - 1)
-  draw_blank_vert(grid_size)
+def draw_bottom_row(brd)
+  draw_blank_sq_vert_div(brd)
+  draw_pc_sq_vert_div(brd, brd[:grid_size] - 1)
+  draw_blank_sq_vert_div(brd)
   puts
 end
 
@@ -142,57 +285,190 @@ def print_divider
   puts "-" * SCREEN_LENGTH
 end
 
-def print_scores(pieces, scores)
-  prompt("(#{pieces[:human]}) #{MESSAGES['human_score']} "\
-         "#{scores[:human]}")
-  prompt("(#{pieces[:ai]}) #{MESSAGES['ai_score']} #{scores[:ai]}")
+def reorder_plyrs_to_print(plyrs, shft_til_fst_plyr, game_windup, match_windup)
+  shft = -(shft_til_fst_plyr + game_windup + match_windup)
+  plyrs.rotate(shft)
+end
+
+def print_scores(plyrs, curr_plyr)
+  plyrs.each do |plyr|
+    human_or_ai = plyr[:human?] ? MESSAGES['human'] : MESSAGES['ai']
+
+    msg = "(#{plyr[:pc]}) "\
+          "#{MESSAGES['plyr']} "\
+          "#{human_or_ai} "\
+          "#{plyr[:num]}, "\
+          "#{MESSAGES['score']} "\
+           "#{plyr[:score]} "
+    msg += '<=' if plyr == curr_plyr
+    puts msg
+  end
   print_divider
 end
 
-def draw_board(grid_size, board)
+# Board is defined as follows:
+# Top row
+#  - blank row with vertical dividers
+#  - piece row with vertical dividers
+#  - blank row with vertical and horizontal dividers
+# Middle row(s)
+#  - blank row with vertical dividers
+#  - piece row with vertical dividers
+#  - blank row with vertical and horizontal dividers
+# Bottom row
+# - blank row with vertical dividers
+# - piece row with vertical dividers
+# - blank row with vertical dividers
+def draw_brd(brd)
   clean_screen
-  draw_y_coords(grid_size)
-  draw_top_row(grid_size, board)
-  draw_middle_rows(grid_size, board)
-  draw_bottom_row(grid_size, board)
+  draw_col_coords(brd)
+  draw_top_row(brd)
+  draw_middle_rows(brd)
+  draw_bottom_row(brd)
 end
 
 def prompt(msg)
   puts "=> #{msg}"
 end
 
-def request_human_piece
-  human_piece = ''
+# Returns an object selected by the user from an array.
+def req_from_list(msg, list)
+  prompt(msg)
 
   loop do
-    prompt(MESSAGES["piece_choice"])
-    human_piece = gets.chomp.upcase
-    break if PIECES_CHOICE.include?(human_piece)
-    prompt(MESSAGES["invalid_choice"])
+    item = gets.chomp.downcase
+    return item if list.include?(item)
+    prompt(MESSAGES['invalid_choice'])
   end
+end
 
-  if human_piece == PIECES_CHOICE[-1]
-    human_piece = PIECES_CHOICE[0..-2].sample
+# Returns a string of the avaliable options for the first player: human, AI
+# or random.
+def first_plyr_choices(human_count, ai_count)
+  msg_choices = []
+  msg_choices << MESSAGES['human'] if !human_count.zero?
+  msg_choices << MESSAGES['ai'] if !ai_count.zero?
+  msg_choices << MESSAGES['random']
+end
+
+# Returns a string of the user selected player type.
+def req_first_plyr_type(human_count, ai_count)
+  msg = "#{MESSAGES['who_first']} "
+
+  msg_choices = first_plyr_choices(human_count, ai_count)
+
+  choices = msg_choices[0..-1] << MESSAGES['random_abbreviated']
+  req_from_list(msg + joinor(msg_choices), choices.map!(&:downcase))
+end
+
+# Returns an integer of the user selected player number for the given player
+# type.
+def req_first_plyr_num(plyr_type, max_plyr_num, choices)
+  if max_plyr_num == 0
+    0
   else
-    human_piece
+    msg = "#{MESSAGES['enter_the']} "\
+          "#{plyr_type} "\
+          "#{MESSAGES['plyr_num_first']} "\
+          "#{choices}"
+
+    req_num_and_scrub_inc_limits(msg, 0, max_plyr_num)
   end
 end
 
-def decide_ai_piece(human_piece)
-  case human_piece
-  when 'X' then 'O'
-  when 'O' then 'X'
+# Returns an integer of the maximum player number for the given player
+# type, and player count.
+def calc_max_plyr_num(plyr_type, human_count, ai_count)
+  case plyr_type
+  when 'human' then human_count - 1
+  when 'ai' then ai_count - 1
   end
 end
 
-def switch_pieces(pieces)
-  pieces[:human], pieces[:ai] = pieces[:ai], pieces[:human]
+# Returns an offset for the players array, which stores all human and ai
+# players, to reach the first player of the given type.
+def offset_from_first_plyr(plyr_type, human_count)
+  case plyr_type
+  when 'human' then 0
+  when 'ai' then human_count
+  end
 end
 
+# Returns a formatted string of possible player numbers to choose from for a
+# given type.
+def choices_for_first_plyr(plyr_type, human_count, ai_count)
+  case plyr_type
+  when 'human' then joinor((0...human_count).to_a).to_s
+  when 'ai' then joinor((0...ai_count).to_a).to_s
+  end
+end
+
+# Returns an integer to shift in the players array in order to reach the first
+# player of a given type. The user may choose the first player or choose a
+# random player to go first.
+def calc_shft_til_first_plyr(plyrs, human_count, ai_count)
+  plyr_type = req_first_plyr_type(human_count, ai_count)
+  max_plyr_num = calc_max_plyr_num(plyr_type, human_count, ai_count)
+  choices = choices_for_first_plyr(plyr_type, human_count, ai_count)
+
+  offset = offset_from_first_plyr(plyr_type, human_count)
+
+  case plyr_type
+  when 'r' then (0...plyrs.length).to_a.sample
+  else offset + req_first_plyr_num(plyr_type, max_plyr_num, choices)
+  end
+end
+
+# Gets the users' piece choices for humans or randomly assigns AI pieces.
+# Returns player objects with assigned pieces.
+def populate_plyrs!(plyr_count, avail_pcs, human)
+  plyrs = []
+
+  plyr_count.times do |plyr_num|
+    pc = if human
+           req_human_pc!(plyr_num, avail_pcs)
+         else
+           decide_ai_pc!(avail_pcs)
+         end
+
+    plyrs << init_plyr(plyr_num, pc, human)
+  end
+
+  plyrs
+end
+
+def req_human_pc!(human_num, avail_pcs)
+  human_pc = ''
+
+  loop do
+    prompt("#{MESSAGES['human']} "\
+           "#{human_num} "\
+           "#{MESSAGES['piece_choice']} "\
+           "#{joinor(avail_pcs)}")
+    human_pc = gets.chomp.upcase
+    break if avail_pcs.include?(human_pc)
+    prompt(MESSAGES['invalid_choice'])
+  end
+
+  avail_pcs.delete(human_pc)
+end
+
+def decide_ai_pc!(avail_pcs)
+  avail_pcs.delete(avail_pcs.sample)
+end
+
+# Returns a formatted string from array items seperated by a deliminator
+# and ending with a grammar conjugation.
+# The formatted string has no deliminator if the array has only 2 items.
+# For example:
+#   joinor([1, 2, 3, 4])
+#     => 1, 2, 3 or 4
+#   joinor([1, 2])
+#     => 1 or 2
 def joinor(arr, delim = ', ', last = 'or')
   case arr.size
   when 0 then return ''
-  when 1 then return arr.first.to_i
+  when 1 then return arr.first.to_s
   when 2 then delim = ' '
   end
 
@@ -200,263 +476,321 @@ def joinor(arr, delim = ', ', last = 'or')
     last + ' ' + arr[-1].to_s
 end
 
-# rubocop: disable Metrics/AbcSize
-def get_human_move_coord(grid_size, board, row_or_column = 'r')
-  # Get row or column number from user
-  # Displays only those rows/columns where empty squares exist
+# Returns a user input restricted to an integer that exists in a given array.
+def req_num_from_list(msg, list)
+  prompt(msg)
+  num = 0
 
   loop do
-    if row_or_column == 'c'
-      prompt(MESSAGES['human_column'])
-    else
-      prompt(MESSAGES['human_row'])
-    end
-
-    prompt(joinor(open_rows_or_columns(grid_size, board, row_or_column)))
-
     input = gets.chomp
+    num = input.to_i
 
-    if input.to_i.to_s == input && (0...grid_size).include?(input.to_i)
-      return input.to_i
-    end
+    break if num.to_s == input && list.include?(num)
 
     prompt(MESSAGES['invalid_choice'])
   end
-end
-# rubocop: enable Metrics/AbcSize
 
-def open_rows_or_columns(grid_size, board, choice = 'r')
-  # Interate empty squares and converts to 2d coordinates
-
-  open_square_coords = []
-
-  board.each_with_index do |square, idx|
-    open_square_coords << idx if square == ' '
-  end
-
-  rows = []
-  columns = []
-
-  open_square_coords.each do |open_square_coord|
-    x, y = convert_to_2d(grid_size, open_square_coord)
-    rows << y
-    columns << x
-  end
-
-  return rows.uniq.sort if choice == 'r'
-  return columns.uniq.sort if choice == 'c'
+  num
 end
 
-def convert_to_2d(grid_size, coord)
+# Returns a row or column number from the user.
+# The rows and columns where an empty square exists are printed, and the user
+# must choose from these.
+def get_human_move_coord(brd, plyr, col)
+  msg = if col
+          "#{MESSAGES['human']} "\
+          "#{plyr[:num]} "\
+          "#{MESSAGES['human_col']} "
+        else
+          "#{MESSAGES['human']} "\
+          "#{plyr[:num]} "\
+          "#{MESSAGES['human_row']} "
+        end
+
+  list = open_rows_or_cols(brd, col)
+  msg += joinor(list)
+
+  req_num_from_list(msg, list)
+end
+
+# Returns a list of rows or columns where empty squares exist.
+def open_rows_or_cols(brd, cols)
+  open_sq_coords = []
+
+  brd[:grid].each_with_index do |sq, idx|
+    if sq == ' '
+      open_sq_coords << idx
+    end
+  end
+
+  rows_or_cols = []
+
+  open_sq_coords.each do |open_sq_coord|
+    x, y = to_2d(brd, open_sq_coord)
+    rows_or_cols << y if !cols
+    rows_or_cols << x if cols
+  end
+
+  rows_or_cols.uniq.sort
+end
+
+def to_2d(brd, coord)
   y_coord = 0
 
-  until y_coord * grid_size > coord
+  until y_coord * brd[:grid_size] > coord
     y_coord += 1
   end
 
   y_coord -= 1
-  x_coord = coord - y_coord * grid_size
+  x_coord = coord - y_coord * brd[:grid_size]
 
   return x_coord, y_coord
 end
 
-def convert_to_1d(grid_size, row, column)
-  row * grid_size + column
+def to_1d(brd, row, col)
+  row * brd[:grid_size] + col
 end
 
-def human_move!(grid_size, board, human_piece)
+# Returns the 1d coordinates of a human move.
+def human_move!(brd, plyr)
   loop do
-    coord_1d = get_human_move_coord(grid_size, board, 'c') +
-               get_human_move_coord(grid_size, board, 'r') * grid_size
+    coord_1d = get_human_move_coord(brd, plyr, true) +
+               get_human_move_coord(brd, plyr, false) * brd[:grid_size]
 
-    if board[coord_1d] == ' '
-      board[coord_1d] = human_piece
+    if brd[:grid][coord_1d] == ' '
+      brd[:grid][coord_1d] = plyr[:pc]
       return coord_1d
     end
 
-    prompt(MESSAGES['square_occupied'])
+    prompt(MESSAGES['sq_occupied'])
   end
 end
 
-def empty_square_in_row(grid_size, board, row)
-  (0...grid_size).each do |col|
-    square = convert_to_1d(grid_size, row, col)
-    return square if board[square] == ' '
-  end
-  nil
-end
-
-def empty_square_in_col(grid_size, board, col)
-  (0...grid_size).each do |row|
-    square = convert_to_1d(grid_size, row, col)
-    return square if board[square] == ' '
-  end
-  nil
-end
-
-def empty_square_in_diag1(grid_size, board)
-  (0...grid_size).each do |row_col|
-    square = convert_to_1d(grid_size, row_col, row_col)
-    return square if board[square] == ' '
-  end
-  nil
-end
-
-def empty_square_in_diag2(grid_size, board)
-  (1..grid_size).each do |row_col|
-    square = convert_to_1d(grid_size, row_col, -row_col)
-    return square if board[square] == ' '
-  end
-  nil
-end
-
-def find_danger_square(grid_size, board, piece)
-  # Check board for imminent win for human pieces in any row, column or diagonal
-
-  danger_row = row_check(grid_size, board, piece, grid_size - 1)
-  danger_col = column_check(grid_size, board, piece, grid_size - 1)
-  danger_diag1 = diag1_filled?(grid_size, board, piece, grid_size - 1)
-  danger_diag2 = diag2_filled?(grid_size, board, piece, grid_size - 1)
-
-  if !!danger_row
-    square = empty_square_in_row(grid_size, board, danger_row)
-    return square if !!square
-  end
-
-  if !!danger_col
-    square = empty_square_in_col(grid_size, board, danger_col)
-    return square if !!square
-  end
-
-  if danger_diag1
-    square = empty_square_in_diag1(grid_size, board)
-    return square if !!square
-  end
-
-  if danger_diag2
-    square = empty_square_in_diag2(grid_size, board)
-    return square if !!square
-  end
-
-  nil
-end
-
-def ai_move!(grid_size, board, pieces)
-  # Select square that results in imminent win for human
-  # Randomly select an empty square if no imminent win for human
-
-  prompt(MESSAGES['ai_turn'])
-
-  danger_square = find_danger_square(grid_size, board, pieces[:human])
-
-  if !!danger_square
-    square = danger_square
-  else
-    empty_squares = []
-    board.each_with_index do |obj, idx|
-      empty_squares << idx if obj == ' '
+# Returns an empty square in a given vector (either rows or columns).
+# Returns nil if no such square exists.
+def find_empty_sq_in_vec(brd, vec, vec_num = '0')
+  (0...brd[:grid_size]).each do |orthog_vec_num|
+    case vec
+    when :rows then
+      sq = to_1d(brd, vec_num, orthog_vec_num)
+    when :cols then
+      sq = to_1d(brd, orthog_vec_num, vec_num)
+    when :diag1 then
+      sq = to_1d(brd, orthog_vec_num, orthog_vec_num)
+    when :diag2 then
+      sq = to_1d(brd, orthog_vec_num, brd[:grid_size] - orthog_vec_num - 1)
     end
-    square = empty_squares.sample
+    return sq if brd[:grid][sq] == ' '
   end
 
-  board[square] = pieces[:ai]
+  nil
 end
 
-def row_check(grid_size, board, piece, piece_count)
-  # Traverses each row and counts occurances of piece in each row
-  # Returns the row if count reaches piece_count, otherwise nil
+# Depending on the given mode, either:
+# - Returns a square in a given vector (either rows or columns) that,
+#  if occupied with the given piece, results in a win for that piece.
+# - Returns nil if no such square exists.
+# or
+# - Returns a square in a given vector (either rows or columns) that,
+#  if occupied by any piece other than the given piece, results in a loss
+#  for the given piece.
+# - Returns nil if no such square exists.
+# rubocop: disable Metrics/CyclomaticComplexity
+# rubocop: disable Metrics/PerceivedComplexity
+def find_loss_win_sq_in_rows_cols(brd, brd_state, pc, rows_cols, win)
+  found_vecs = find_vecs_with_pc_count(brd_state,
+                                       brd[:grid_size] - 1,
+                                       rows_cols)
 
-  # Traverse each row
-  (0...grid_size).map do |row|
-    # Traverse each square by column, within a row
-    row_total = (0...grid_size).map do |column|
-      board[convert_to_1d(grid_size, row, column)]
+  found_vecs.each do |found_vec|
+    found_sq = find_empty_sq_in_vec(brd, rows_cols, found_vec[:vec_num])
+
+    if !found_sq.nil? && found_vec[:pc] == pc && win
+      return found_sq
+    elsif !found_sq.nil? && found_vec[:pc] != pc && !win
+      return found_sq
     end
-    row_total.count(piece)
-  end.index(piece_count)
+  end
+
+  nil
 end
 
-def column_check(grid_size, board, piece, piece_count)
-  # Traverses each column and counts occurances of piece in each column
-  # Returns the column if count reaches piece_count, otherwise nil
+# Depending on the given mode, either:
+# - Returns a square in a given diagonal that, if occupied with the given
+#  piece, results in a win for that piece.
+# - Returns nil if no such square exists.
+# or
+# - Returns a square in a given diagonal that, if occupied by any piece other
+# than the given piece, results in a loss for the given piece.
+# - Returns nil if no such square exists.
+def find_loss_win_sq_in_diags(brd, brd_state, pc, diag1_or_diag2, win)
+  found_pc = find_vec_with_pc_count(brd_state[diag1_or_diag2],
+                                    brd[:grid_size] - 1)
 
-  # Traverse each column
-  (0...grid_size).map do |column|
-    # Traverse each square by row, within a column
-    (0...grid_size).map do |row|
-      board[convert_to_1d(grid_size, row, column)]
-    end.count(piece)
-  end.index(piece_count)
+  found_sq = found_pc.nil? ? nil : find_empty_sq_in_vec(brd, diag1_or_diag2)
+
+  if !found_sq.nil? && found_pc == pc && win
+    return found_sq
+  elsif !found_sq.nil? && found_pc != pc && !win
+    return found_sq
+  end
+
+  nil
+end
+# rubocop: enable Metrics/CyclomaticComplexity
+# rubocop: enable Metrics/PerceivedComplexity
+
+# Depending on the given mode, either:
+# - Returns a square if occupied with the given piece, results in a win for
+#   that piece.
+# - Returns nil if no such square exists.
+# - Returns a square that, if occupied by any piece other than the given piece,
+#   results in a loss for the given piece.
+# - Returns nil if no such square exists.
+def find_loss_win_sq(brd, brd_state, pc, win)
+  found_sq = find_loss_win_sq_in_rows_cols(brd, brd_state, pc, :rows, win)
+  return found_sq if !found_sq.nil?
+
+  found_sq = find_loss_win_sq_in_rows_cols(brd, brd_state, pc, :cols, win)
+  return found_sq if !found_sq.nil?
+
+  found_sq = find_loss_win_sq_in_diags(brd, brd_state, pc, :diag1, win)
+  return found_sq if !found_sq.nil?
+
+  found_sq = find_loss_win_sq_in_diags(brd, brd_state, pc, :diag2, win)
+  return found_sq if !found_sq.nil?
+
+  nil
 end
 
-def diag1_filled?(grid_size, board, piece, piece_count)
-  # Traverse diagonal from top-left to bottom-right and counts occurances of
-  # piece in diagonal
-  # Returns true/false whether count of piece reached pice_count
-
-  (0...grid_size).map do |row_column|
-    board[convert_to_1d(grid_size, row_column, row_column)]
-  end.count(piece) == piece_count
+def rand_empty_sq(brd)
+  empty_sqs = []
+  brd[:grid].each_with_index do |obj, idx|
+    empty_sqs << idx if obj == ' '
+  end
+  empty_sqs.sample
 end
 
-def diag2_filled?(grid_size, board, piece, piece_count)
-  # Traverse diagonal from top-left to bottom-right and counts occurances of
-  # piece in diagonal
-  # Returns true/false whether count of piece reached pice_count
+# Returns the 1d coordinates of the square that the AI decided to move.
+# The AI moves on a square that results in a win. If no such square exists,
+# the AI moves on a square that results in a win for any other plyr.
+# If no such square exists, the AI selects a random square.
+def ai_move!(brd, brd_state, plyr)
+  prompt("#{MESSAGES['ai']} #{plyr[:num]} #{MESSAGES['turn']}")
 
-  (1..grid_size).map do |row_column|
-    board[convert_to_1d(grid_size, row_column, -row_column)]
-  end.count(piece) == piece_count
+  win_sq = find_loss_win_sq(brd, brd_state, plyr[:pc], true)
+  loss_sq = find_loss_win_sq(brd, brd_state, plyr[:pc], false)
+
+  sq = if !win_sq.nil?
+         win_sq
+       elsif !loss_sq.nil?
+         loss_sq
+       else
+         rand_empty_sq(brd)
+       end
+
+  brd[:grid][sq] = plyr[:pc]
+  sq
 end
 
-def win?(grid_size, board, piece)
-  !!row_check(grid_size, board, piece, grid_size) ||
-    !!column_check(grid_size, board, piece, grid_size) ||
-    diag1_filled?(grid_size, board, piece, grid_size) ||
-    diag2_filled?(grid_size, board, piece, grid_size)
+# Returns the piece whose count equals the given count in a given vector:
+# rows, columns and diagonals.
+# Returns nil if no such square exists.
+def find_vec_with_pc_count(vec_state, count)
+  pc = vec_state.key(count).to_s
+  pc.empty? ? nil : pc
 end
 
-def tie?(board)
-  board.count(' ') == 0
+# Returns a list of vectors (rows or columns), where each vector
+# contains a piece whose count equals the given count.
+def find_vecs_with_pc_count(brd_state, count, vecs = :rows)
+  found_vecs = []
+
+  brd_state[vecs].each_with_index do |vec_state, vec_num|
+    pc = find_vec_with_pc_count(vec_state, count)
+    if !!pc
+      found_vecs << { pc: pc, vec_num: vec_num }
+    end
+  end
+
+  found_vecs
 end
 
-def determine_match_result(grid_size, board, current_piece)
-  if win?(grid_size, board, current_piece)
+def win_in_rows_or_cols?(brd, brd_state, pc, vec)
+  found_vecs = find_vecs_with_pc_count(brd_state, brd[:grid_size], vec)
+
+  found_pc_in_vec = if !found_vecs.empty?
+                      found_vecs.first[:pc]
+                    end
+
+  found_pc_in_vec == pc
+end
+
+def win_in_diags?(brd, brd_state, pc, vec)
+  found_pc_in_vec = find_vec_with_pc_count(brd_state[vec], brd[:grid_size])
+
+  found_pc_in_vec == pc
+end
+
+def win?(brd, brd_state, pc)
+  win_in_rows = win_in_rows_or_cols?(brd, brd_state, pc, :rows)
+  win_in_cols = win_in_rows_or_cols?(brd, brd_state, pc, :cols)
+  win_in_diag1 = win_in_diags?(brd, brd_state, pc, :diag1)
+  win_in_diag2 = win_in_diags?(brd, brd_state, pc, :diag2)
+
+  (win_in_rows || win_in_cols || win_in_diag1 || win_in_diag2)
+end
+
+def tie?(brd)
+  brd[:grid].count(' ') == 0
+end
+
+def determine_match_result(brd, brd_state, pc)
+  if win?(brd, brd_state, pc)
     'win'
-  elsif tie?(board)
+  elsif tie?(brd)
     'tie'
   else
     'continue'
   end
 end
 
-def print_match_result(current_player, result)
+def print_match_result(plyr, result)
   case result
   when 'win'
-    prompt(MESSAGES['ai_win_match']) if current_player == :ai
-    prompt(MESSAGES['human_win_match']) if current_player == :human
+    if result == 'win'
+      human_or_ai = plyr[:human?] ? 'human' : 'AI'
+
+      prompt("#{MESSAGES['plyr']} "\
+             "#{human_or_ai} "\
+             "#{plyr[:num]} "\
+             "#{MESSAGES['won_match']}")
+    end
   when 'tie'
     prompt(MESSAGES['tie'])
   end
 end
 
-def update_scores(scores, current_player)
-  scores[current_player] += 1
+def game_over?(plyrs)
+  plyrs.any? { |plyr| plyr[:score] == WIN_CONDITION }
 end
 
-def game_over?(scores)
-  scores[:human] == WIN_CONDITION || scores[:ai] == WIN_CONDITION
+def display_winner(plyrs)
+  plyrs.each do |plyr|
+    human_or_ai = plyr[:human?] ? 'human' : 'AI'
+    if plyr[:score] == WIN_CONDITION
+      prompt("#{MESSAGES['plyr']} "\
+             "#{human_or_ai} "\
+             "#{plyr[:num]} "\
+             "#{MESSAGES['won_game']}")
+    end
+  end
 end
 
-def display_winner(scores)
-  prompt(MESSAGES['human_win_game']) if scores[:human] == WIN_CONDITION
-  prompt(MESSAGES['ai_win_game']) if scores[:ai] == WIN_CONDITION
-end
-
-def next_match
+def wait_user(msg)
   user_input = ''
   until user_input =~ /./
-    prompt(MESSAGES['next_match'])
+    prompt(msg)
     user_input = gets.chomp
   end
 end
@@ -470,64 +804,117 @@ def play_again?
   user_input == 'y'
 end
 
-# Main
 clean_screen
 prompt(MESSAGES['welcome'])
+game_windup = 0
 
-# Game loop
+# Game loop.
+# A game consists of 5 match wins.
+# players array is a stack that rotates (shifts left) after every move.
+# The plyr at the top of the stack gets to move.
+# match_windup keeps track of number of stack rotations made during a match.
+# game_windup keeps track of number of stack rotations made during the game.
+
 loop do
-  grid_size = request_grid_size
+  grid_size = req_grid_size
+  avail_pcs = PIECES_CHOICE.dup
+  brd = init_brd(grid_size)
+  plyrs = []
+  human_count = req_plyr_count(0, grid_size, true)
+  ai_count = req_ai_count(grid_size, human_count)
 
-  board = init_board(grid_size)
-  scores = init_scores
-  pieces = init_pieces
+  plyrs += populate_plyrs!(human_count, avail_pcs, true)
+  plyrs += populate_plyrs!(ai_count, avail_pcs, false)
 
-  pieces[:human] = request_human_piece
-  pieces[:ai] = decide_ai_piece(pieces[:human])
+  # The user may decide which player goes first. Since the players array stores
+  # players in numerical order with humans first, then AI, we must rotate
+  # the array until the first player to move is in the first index.
+  shft_til_fst_plyr = calc_shft_til_first_plyr(plyrs,
+                                               human_count,
+                                               ai_count)
+  plyrs.rotate!(shft_til_fst_plyr)
 
-  # Match loop
+  # Match loop.
   loop do
-    current_player = :ai
     match_result = ''
-    flip_flop = true if pieces[:human] == 'O'
+    match_windup = 0
+    clear_brd!(brd)
+    brd_state = init_brd_state(grid_size)
+    curr_plyr = plyrs.first
 
-    clear_board!(board)
-    draw_board(grid_size, board)
-    print_scores(pieces, scores)
-
+    # Play moves loop.
     loop do
-      if flip_flop
-        ai_move!(grid_size, board, pieces)
-        current_player = :ai
+      curr_plyr = plyrs.first
+      draw_brd(brd)
+
+      # Print the scoreboard in the logical ordering of players.
+      # For example:
+      #   human 0 -> human 1 -> AI 0 -> AI 1 ...
+      plyrs_in_print_order = reorder_plyrs_to_print(plyrs,
+                                                    shft_til_fst_plyr,
+                                                    game_windup,
+                                                    match_windup)
+      print_scores(plyrs_in_print_order, curr_plyr)
+
+      if curr_plyr[:human?] == true
+        sq_coord_1d = human_move!(brd, curr_plyr)
       else
-        human_move!(grid_size, board, pieces[:human])
-        current_player = :human
+        sq_coord_1d = ai_move!(brd, brd_state, curr_plyr)
+        wait_user(MESSAGES['continue'])
       end
 
-      current_piece = pieces[current_player]
+      update_brd_state!(brd, brd_state, sq_coord_1d, curr_plyr)
+      draw_brd(brd)
 
-      draw_board(grid_size, board)
-      print_scores(pieces, scores)
+      # Unwinds the stack to logical ordering when printing.
+      # For example:
+      #   human 0, human 1, ..., AI 0, AI 1, ...
+      plyrs_in_print_order = reorder_plyrs_to_print(plyrs,
+                                                    shft_til_fst_plyr,
+                                                    game_windup,
+                                                    match_windup)
+      print_scores(plyrs_in_print_order, curr_plyr)
 
-      match_result = determine_match_result(grid_size, board, current_piece)
+      match_result = determine_match_result(brd, brd_state, curr_plyr[:pc])
 
       if match_result != 'continue'
-        update_scores(scores, current_player)
+        curr_plyr[:score] += 1 if match_result == 'win'
         break
       end
 
-      flip_flop = !flip_flop
+      plyrs.rotate!
+      match_windup += 1
     end
 
     clean_screen
-    draw_board(grid_size, board)
-    print_scores(pieces, scores)
-    print_match_result(current_player, match_result)
-    break if game_over?(scores)
-    switch_pieces(pieces)
-    next_match
+    draw_brd(brd)
+
+    # Unwinds the stack to logical ordering when printing.
+    # For example:
+    #   human 0, human 1, ..., AI 0, AI 1, ...
+    plyrs_in_print_order = reorder_plyrs_to_print(plyrs,
+                                                  shft_til_fst_plyr,
+                                                  game_windup,
+                                                  match_windup)
+    print_scores(plyrs_in_print_order, curr_plyr)
+
+    print_match_result(curr_plyr, match_result)
+
+    # Unwinds the stack to the order at the start of the match.
+    plyrs.rotate!(-match_windup)
+
+    break if game_over?(plyrs)
+
+    # The next plyr goes first next match.
+    plyrs.rotate!
+    game_windup += 1
+    wait_user(MESSAGES['next_match'])
   end
 
-  display_winner(scores)
+  # Unwinds the stack to logical ordering when printing.
+  # For example:
+  #   human 0, human 1, ..., AI 0, AI 1, ...
+  plyrs.rotate!(-game_windup)
+  display_winner(plyrs)
   break if !play_again?
 end
