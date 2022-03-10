@@ -12,13 +12,9 @@ For example:
   (2,0)|(2,1)|(2,2)
     6  |  7  |  8
        |     |
-
-TODO: align scores
-TODO: colour symbols
 =end
 
 require 'yaml'
-require 'pry-byebug'
 
 MESSAGES = YAML.load_file('tic_tac_toe.yml')
 SCREEN_LENGTH = 80
@@ -75,7 +71,7 @@ end
 
 # Returns the number of AI players from the user.
 # Note that the sum of human and AI players must be >= 2 and <= grid size.
-# We don't ask for the number of AI players if there can be no more AI plyrs.
+# We don't ask for the number of AI players if there can be no more AI players.
 # We don't ask for the number of AI players if there's only one possible
 # option.
 # For example:
@@ -114,8 +110,8 @@ end
 # Returns a hash that keeps keeps track of each pieces' count in each
 # row, column and diagonal.
 # For example:
-#   rows: Contains an array of size equal to grid.
-#   Each row in rows: contains a hash where keys are pieces, and values are
+#   rows: Contains an array of rows.
+#   Each row contains a hash where keys are pieces, and values are
 #   the count of pieces in the respective row.
 # Note that diag1 is the top-left to bottom-right diagonal.
 # Note that diag2 is the top-right to bottom-left diagonal.
@@ -153,15 +149,15 @@ def clear_brd!(brd)
 end
 
 =begin
-Returns the padding to the right of a piece marked by Zs below.
-       |     |
-       |     |
-  _____|_____|_____
-       |     |
-       |     |
-  _____|_____|_____
+Returns the padding to the right of a piece denoted by Zs below.
        |     |
   ZZ   |     |
+  _____|_____|_____
+       |     |
+       |     |
+  _____|_____|_____
+       |     |
+       |     |
        |     |
 =end
 def calc_front_pad(center_str)
@@ -170,15 +166,15 @@ def calc_front_pad(center_str)
 end
 
 =begin
-Returns the padding to the left of a piece marked by Zs below.
-       |     |
-       |     |
-  _____|_____|_____
-       |     |
-       |     |
-  _____|_____|_____
+Returns the padding to the left of a piece denoted by Zs below.
        |     |
      ZZ|     |
+  _____|_____|_____
+       |     |
+       |     |
+  _____|_____|_____
+       |     |
+       |     |
        |     |
 =end
 def calc_back_pad(front_pad, center_str)
@@ -187,7 +183,7 @@ def calc_back_pad(front_pad, center_str)
 end
 
 =begin
-Prints the part of a square marked below by Zs.
+Prints the part of a square denoted below by Zs.
   ZZZZZZ     |
        |     |
   _____|_____|_____
@@ -203,7 +199,7 @@ def draw_blank_sq_vert_div(brd)
 end
 
 =begin
-Prints the part of a square marked below by Zs.
+Prints the part of a square denoted below by Zs.
        |     |
   ZZZZZZ     |
   _____|_____|_____
@@ -232,7 +228,7 @@ end
 # rubocop: enable Metrics/AbcSize
 
 =begin
-Prints the part of a square marked below by Zs.
+Prints the part of a square denoted below by Zs.
        |     |
        |     |
   ZZZZZZ_____|_____
@@ -285,6 +281,9 @@ def print_divider
   puts "-" * SCREEN_LENGTH
 end
 
+# Unwinds the players stack to logical ordering when printing.
+# For example:
+#   human 0, human 1, ..., AI 0, AI 1, ...
 def reorder_plyrs_to_print(plyrs, shft_til_fst_plyr, game_windup, match_windup)
   shft = -(shft_til_fst_plyr + game_windup + match_windup)
   plyrs.rotate(shft)
@@ -297,8 +296,9 @@ def print_scores(plyrs, curr_plyr)
     msg = "(#{plyr[:pc]}) "\
           "#{MESSAGES['plyr']} "\
           "#{human_or_ai} "\
-          "#{plyr[:num]}, "\
-          "#{MESSAGES['score']} "\
+          "#{plyr[:num]}"
+    msg = "#{msg.ljust(20)}"\
+          "| #{MESSAGES['score']} "\
            "#{plyr[:score]} "
     msg += '<=' if plyr == curr_plyr
     puts msg
@@ -308,17 +308,17 @@ end
 
 # Board is defined as follows:
 # Top row
-#  - blank row with vertical dividers
-#  - piece row with vertical dividers
-#  - blank row with vertical and horizontal dividers
+#  - Blank row with vertical dividers.
+#  - Piece row with vertical dividers.
+#  - Blank row with vertical and horizontal dividers.
 # Middle row(s)
-#  - blank row with vertical dividers
-#  - piece row with vertical dividers
-#  - blank row with vertical and horizontal dividers
+#  - Blank row with vertical dividers.
+#  - Piece row with vertical dividers.
+#  - Blank row with vertical and horizontal dividers.
 # Bottom row
-# - blank row with vertical dividers
-# - piece row with vertical dividers
-# - blank row with vertical dividers
+# - Blank row with vertical dividers.
+# - Piece row with vertical dividers.
+# - Blank row with vertical dividers.
 def draw_brd(brd)
   clean_screen
   draw_col_coords(brd)
@@ -385,7 +385,7 @@ def calc_max_plyr_num(plyr_type, human_count, ai_count)
   end
 end
 
-# Returns an offset for the players array, which stores all human and ai
+# Returns an offset for the players array, which stores all human and AI
 # players, to reach the first player of the given type.
 def offset_from_first_plyr(plyr_type, human_count)
   case plyr_type
@@ -586,11 +586,11 @@ def find_empty_sq_in_vec(brd, vec, vec_num = '0')
   nil
 end
 
-# Depending on the given mode, either:
+# Depending on the given mode, either (win = true):
 # - Returns a square in a given vector (either rows or columns) that,
 #  if occupied with the given piece, results in a win for that piece.
 # - Returns nil if no such square exists.
-# or
+# or (win = false)
 # - Returns a square in a given vector (either rows or columns) that,
 #  if occupied by any piece other than the given piece, results in a loss
 #  for the given piece.
@@ -615,11 +615,11 @@ def find_loss_win_sq_in_rows_cols(brd, brd_state, pc, rows_cols, win)
   nil
 end
 
-# Depending on the given mode, either:
+# Depending on the given mode, either (win = true):
 # - Returns a square in a given diagonal that, if occupied with the given
 #  piece, results in a win for that piece.
 # - Returns nil if no such square exists.
-# or
+# or (win = false)
 # - Returns a square in a given diagonal that, if occupied by any piece other
 # than the given piece, results in a loss for the given piece.
 # - Returns nil if no such square exists.
@@ -640,10 +640,11 @@ end
 # rubocop: enable Metrics/CyclomaticComplexity
 # rubocop: enable Metrics/PerceivedComplexity
 
-# Depending on the given mode, either:
-# - Returns a square if occupied with the given piece, results in a win for
-#   that piece.
+# Depending on the given mode, either (win = true):
+# - Returns a square that, if occupied with the given piece, results in a win
+#   for that piece.
 # - Returns nil if no such square exists.
+# or (win = false)
 # - Returns a square that, if occupied by any piece other than the given piece,
 #   results in a loss for the given piece.
 # - Returns nil if no such square exists.
@@ -673,7 +674,7 @@ end
 
 # Returns the 1d coordinates of the square that the AI decided to move.
 # The AI moves on a square that results in a win. If no such square exists,
-# the AI moves on a square that results in a win for any other plyr.
+# the AI moves on a square that results in a win for any other player.
 # If no such square exists, the AI selects a random square.
 def ai_move!(brd, brd_state, plyr)
   prompt("#{MESSAGES['ai']} #{plyr[:num]} #{MESSAGES['turn']}")
@@ -811,7 +812,7 @@ game_windup = 0
 # Game loop.
 # A game consists of 5 match wins.
 # players array is a stack that rotates (shifts left) after every move.
-# The plyr at the top of the stack gets to move.
+# The player at the top of the stack gets to move.
 # match_windup keeps track of number of stack rotations made during a match.
 # game_windup keeps track of number of stack rotations made during the game.
 
@@ -826,9 +827,6 @@ loop do
   plyrs += populate_plyrs!(human_count, avail_pcs, true)
   plyrs += populate_plyrs!(ai_count, avail_pcs, false)
 
-  # The user may decide which player goes first. Since the players array stores
-  # players in numerical order with humans first, then AI, we must rotate
-  # the array until the first player to move is in the first index.
   shft_til_fst_plyr = calc_shft_til_first_plyr(plyrs,
                                                human_count,
                                                ai_count)
@@ -845,11 +843,8 @@ loop do
     # Play moves loop.
     loop do
       curr_plyr = plyrs.first
-      draw_brd(brd)
 
-      # Print the scoreboard in the logical ordering of players.
-      # For example:
-      #   human 0 -> human 1 -> AI 0 -> AI 1 ...
+      draw_brd(brd)
       plyrs_in_print_order = reorder_plyrs_to_print(plyrs,
                                                     shft_til_fst_plyr,
                                                     game_windup,
@@ -866,9 +861,6 @@ loop do
       update_brd_state!(brd, brd_state, sq_coord_1d, curr_plyr)
       draw_brd(brd)
 
-      # Unwinds the stack to logical ordering when printing.
-      # For example:
-      #   human 0, human 1, ..., AI 0, AI 1, ...
       plyrs_in_print_order = reorder_plyrs_to_print(plyrs,
                                                     shft_til_fst_plyr,
                                                     game_windup,
@@ -888,10 +880,6 @@ loop do
 
     clean_screen
     draw_brd(brd)
-
-    # Unwinds the stack to logical ordering when printing.
-    # For example:
-    #   human 0, human 1, ..., AI 0, AI 1, ...
     plyrs_in_print_order = reorder_plyrs_to_print(plyrs,
                                                   shft_til_fst_plyr,
                                                   game_windup,
@@ -905,15 +893,13 @@ loop do
 
     break if game_over?(plyrs)
 
-    # The next plyr goes first next match.
+    # The next player goes first next match.
     plyrs.rotate!
     game_windup += 1
     wait_user(MESSAGES['next_match'])
   end
 
-  # Unwinds the stack to logical ordering when printing.
-  # For example:
-  #   human 0, human 1, ..., AI 0, AI 1, ...
+  # Unwinds the stack to the order at the start of the game.
   plyrs.rotate!(-game_windup)
   display_winner(plyrs)
   break if !play_again?
