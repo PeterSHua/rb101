@@ -353,13 +353,6 @@ def display_result(winner)
   end
 end
 
-def determine_result(gambler, dealer)
-  winner = compare_hands(gambler, dealer)
-  display_result(winner)
-
-  winner
-end
-
 def game_over?(players)
   players.each do |player|
     if player[:score] == SCORE_LIMIT
