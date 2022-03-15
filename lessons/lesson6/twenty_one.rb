@@ -71,7 +71,8 @@ end
 # {
 #   heart: [2, 3, 4, 5, 6, 7, 8, 9, 10, jack, queen, king, ace]
 #   diamond: [...]
-#   ...
+#   club: [...]
+#   spade: [...]
 # }
 def init_deck
   SUITS.each_with_object(Hash.new) do |suit_name, deck|
@@ -201,12 +202,12 @@ def rand_suit(deck)
 end
 
 def rand_card!(deck)
-  drawn_suit = rand_suit(deck)
-  drawn_face = deck[drawn_suit].sample
+  suit = rand_suit(deck)
+  head = deck[suit].sample
 
-  deck[drawn_suit].delete(drawn_face)
+  deck[suit].delete(head)
 
-  init_card(drawn_suit, drawn_face)
+  init_card(suit, head)
 end
 
 def display_card(card, mask)
@@ -295,7 +296,7 @@ def stay?(player)
   end
 end
 
-# Returns the value of the player's hand.
+# Returns the sum of aces in the player's hand.
 # Aces may have a value of 1 or 11, but there may only be one ace with a value
 # of 11, in any hand, without busting. We make an assumption that one ace in a
 # hand is 11, all other ace's are 1. If this assupmtion causes the hand to
@@ -374,7 +375,7 @@ def discard_hands!(players)
   end
 end
 
-def reset_scores(players)
+def reset_scores!(players)
   players.each do |player|
     player[:score] = 0
   end
@@ -404,7 +405,6 @@ players = [gambler, dealer]
 loop do
   clear_screen
   deck = init_deck
-  mask = false
 
   DEAL_TIMES.times do |idx|
     # We must not show the dealer's second card and their hand's value until
@@ -423,7 +423,7 @@ loop do
   end
 
   catch :round_over do
-    throw :round_over if blackjack?(gambler)
+    break if blackjack?(gambler)
 
     players.each do |player|
       next if blackjack?(player)
@@ -458,7 +458,7 @@ loop do
 
   if game_over?(players)
     break if !play_again?
-    reset_scores(players)
+    reset_scores!(players)
   else
     wait_user
   end
