@@ -380,7 +380,7 @@ def reset_scores(players)
   end
 end
 
-def update_score(winner)
+def update_score!(winner)
   winner[:score] += 1
 end
 
@@ -450,7 +450,7 @@ loop do
   end
 
   winner = compare_hands(gambler, dealer)
-  update_score(winner) if !winner.nil?
+  update_score!(winner) if !winner.nil?
 
   clear_screen
   display_table(players)
