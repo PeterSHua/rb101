@@ -26,7 +26,10 @@ end
 =end
 
 # Futher exploration with inject
+require 'pry-byebug'
+
 def running_total(numbers)
+  binding.pry
   total = 0
   numbers.inject([]) { |arr, num| arr << total += num}
 end

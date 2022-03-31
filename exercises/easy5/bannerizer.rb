@@ -73,3 +73,105 @@ print_in_box('111111111111111111111111111111111111111111111111111111111111111111
 print_in_box('Test one two three')
 print_in_box('Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor')
 print_in_box(long_text)
+
+=begin
+Second Attempt
+
+Input: String
+Output: Print Banner
+
+Corner Border
+Edge Border
+Edge Border with Text
+Edge Border
+Corner Border
+
+Corner Border
+PLUS + DASH + DASH * Input.length + DASH + PLUS
+
+Edge Border
+PIPE + SPACE + SPACE * Input.length + SPACE + PIPE
+
+Edge Border with Text
+PIPE + SPACE + Input + SPACE + PIPE
+-------------------------------------------------------------------------------
+
+require 'pry-byebug'
+
+MAX_TEXT_LENGTH = 76
+
+def print_corner(input)
+  txt_length = input.length > MAX_TEXT_LENGTH ? MAX_TEXT_LENGTH : input.length
+
+  puts "+-#{'-' * txt_length}-+"
+end
+
+def print_edge(input)
+  txt_length = input.length > MAX_TEXT_LENGTH ? MAX_TEXT_LENGTH : input.length
+
+  puts "| #{' ' * txt_length} |"
+end
+
+def print_line(txt_length, line)
+  puts "| #{line}#{' ' * (txt_length - line.length)} |"
+end
+
+def print_word_multiline(word)
+  remaining = word
+
+  until remaining.length <= MAX_TEXT_LENGTH
+    puts "| #{remaining[0..75]} |"
+    remaining = remaining[76..]
+  end
+
+  remaining
+end
+
+def print_edge_text(input)
+  words = input.split
+  line = ''
+
+  txt_length = input.length > MAX_TEXT_LENGTH ? MAX_TEXT_LENGTH : input.length
+
+  words.each do |word|
+    if line == ''
+      remaining = print_word_multiline(word)
+      line << remaining
+    elsif line.length + 1 + word.length <= MAX_TEXT_LENGTH
+      line << ' ' << word
+    else
+      print_line(txt_length, line)
+      line = ''
+
+      remaining = print_word_multiline(word)
+      line << remaining
+    end
+
+    print_line(txt_length, line) if word == words.last
+  end
+end
+
+def print_in_box(input)
+  print_corner(input)
+  print_edge(input)
+  print_edge_text(input)
+  print_edge(input)
+  print_corner(input)
+end
+
+txt = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. In quis ipsum id nisl egestas rhoncus vel sit amet lectus. Quisque nunc ligula, sodales vel tellus non, viverra viverra dui. Sed eu condimentum leo. Sed eget sem vel turpis congue pharetra. Maecenas varius, ex at iaculis rutrum, ex nibh faucibus turpis, non finibus leo enim at diam. Nullam porta gravida porta. Morbi mollis tellus hendrerit tellus luctus vulputate. Integer pretium nibh scelerisque tortor maximus tincidunt. Curabitur et urna eros. Sed porta odio nec nibh consectetur, posuere consequat felis interdum. Morbi vehicula libero nec urna sagittis, eu fermentum magna interdum. Fusce ut luctus est, ut condimentum tellus. Cras nisi diam, aliquam condimentum hendrerit cursus, luctus in neque. Quisque neque dui, finibus imperdiet neque a, varius vehicula libero. "
+print_in_box(txt)
+
+txt = "Lorem ipsum dolor sit amet, consectetur adipiscing elit."
+print_in_box(txt)
+
+txt = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+print_in_box(txt)
+
+txt = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbb"
+print_in_box(txt)
+
+txt = "aaaa"
+print_in_box(txt)
+
+=end
